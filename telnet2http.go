@@ -1,5 +1,6 @@
 package main
 
+//import needed libraries
 import (
 	"bytes"
 	"flag"
@@ -12,6 +13,7 @@ import (
 	"strings"
 )
 
+//handle tcp/ip connections
 func handleConnection(c net.Conn, msgchan chan<- string) {
 	buf := make([]byte, 4096)
 	for {
@@ -25,6 +27,7 @@ func handleConnection(c net.Conn, msgchan chan<- string) {
 	fmt.Printf("Connection from %v closed.\n", c.RemoteAddr())
 }
 
+//send message via http
 func printMessages(msgchan <-chan string, urlstr string, method string) {
 	for {
 		msg := strings.TrimSpace(<-msgchan)
@@ -36,16 +39,19 @@ func printMessages(msgchan <-chan string, urlstr string, method string) {
 			r, _ := http.NewRequest("POST", urlstr, bytes.NewBufferString(data.Encode()))
 			r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 			r.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
-			client.Do(r)
+			rsp, _ := client.Do(r)
+			defer rsp.Body.Close()
 		} else {
 			r, _ := http.NewRequest("GET", urlstr+"?"+data.Encode(), nil)
 			r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 			r.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
-			client.Do(r)
+			rsp, _ := client.Do(r)
+			defer rsp.Body.Close()
 		}
 	}
 }
 
+//main function to start listener
 func main() {
 	flag.Parse()
 	url := flag.Arg(0)
