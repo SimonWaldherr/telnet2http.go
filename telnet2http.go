@@ -11,10 +11,24 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
+
+//EXAMPLE:
+//go run telnet2http.go "destination url" [port [method [timeout]]]
+//go run telnet2http.go "http://de.wikipedia.org:80/" 3000 GET 5
+//telnet localhost 3000
+//nc localhost 3000 < LICENSE
+
+var timeout int64 = 0
 
 //handle tcp/ip connections
 func handleConnection(c net.Conn, msgchan chan<- string) {
+	defer c.Close()
+	fmt.Printf("Connection from %v established.\n", c.RemoteAddr())
+	if timeout != 0 {
+		c.SetReadDeadline(time.Now().Add(time.Second * time.Duration(timeout)))
+	}
 	buf := make([]byte, 4096)
 	for {
 		n, err := c.Read(buf)
@@ -57,6 +71,7 @@ func main() {
 	url := flag.Arg(0)
 	port := ":" + flag.Arg(1)
 	method := flag.Arg(2)
+	timeout, _ = strconv.ParseInt(flag.Arg(3), 10, 64)
 	if url == "" {
 		url = "localhost"
 	}
@@ -65,6 +80,10 @@ func main() {
 	}
 	if method == "" {
 		method = "POST"
+	}
+	fmt.Printf("Listening on port %v and sending via %v to %v\n", port, method, url)
+	if timeout != 0 {
+		fmt.Printf("Abort telnet connection after %v seconds\n", timeout)
 	}
 	ln, err := net.Listen("tcp", port)
 	if err != nil {
