@@ -5,9 +5,10 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/http"
-	"net/url"
+	uri "net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -23,7 +24,7 @@ import (
 var timeout int64 = 0
 
 //handle tcp/ip connections
-func handleConnection(c net.Conn, msgchan chan<- string) {
+func handleConnection(c *net.TCPConn, msgchan chan<- string) {
 	defer c.Close()
 	fmt.Printf("Connection from %v established.\n", c.RemoteAddr())
 	if timeout != 0 {
@@ -43,24 +44,46 @@ func handleConnection(c net.Conn, msgchan chan<- string) {
 
 //send message via http
 func printMessages(msgchan <-chan string, urlstr string, method string) {
+	var url string
+	var body *bytes.Buffer
+	var rtype string
+	var clength string
+	var bodyBytes []byte
 	for {
 		msg := strings.TrimSpace(<-msgchan)
 		fmt.Printf("data: %s\n", msg)
-		data := url.Values{}
+		data := uri.Values{}
 		data.Add("value", strings.TrimSpace(msg))
 		client := &http.Client{}
 		if method == "POST" {
-			r, _ := http.NewRequest("POST", urlstr, bytes.NewBufferString(data.Encode()))
-			r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-			r.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
-			rsp, _ := client.Do(r)
-			defer rsp.Body.Close()
+			rtype = "POST"
+			url = urlstr
+			body = bytes.NewBufferString(data.Encode())
+			clength = strconv.Itoa(len(data.Encode()))
 		} else {
-			r, _ := http.NewRequest("GET", urlstr+"?"+data.Encode(), nil)
-			r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-			r.Header.Add("Content-Length", strconv.Itoa(len(data.Encode())))
-			rsp, _ := client.Do(r)
-			defer rsp.Body.Close()
+			rtype = "GET"
+			url = urlstr + "?" + data.Encode()
+			body = bytes.NewBufferString("")
+			clength = "0"
+		}
+		fmt.Println(rtype + "\n" + url + "\n" + clength)
+		r, _ := http.NewRequest(rtype, url, body)
+		r.Header.Add("User-Agent", "telnet2http")
+		r.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+		r.Header.Add("Content-Length", clength)
+		rsp, err := client.Do(r)
+		if err != nil {
+			fmt.Println(err)
+		} else {
+			if rsp.StatusCode == 200 {
+				bodyBytes, _ = ioutil.ReadAll(rsp.Body)
+				fmt.Println(string(bodyBytes))
+			} else if err != nil {
+				fmt.Println(err)
+			} else {
+				fmt.Println("The remote end did not return a HTTP 200 (OK) response.")
+			}
+			rsp.Body.Close()
 		}
 	}
 }
@@ -85,7 +108,8 @@ func main() {
 	if timeout != 0 {
 		fmt.Printf("Abort telnet connection after %v seconds\n", timeout)
 	}
-	ln, err := net.Listen("tcp", port)
+	l, err := net.Listen("tcp", port)
+	ln := l.(*net.TCPListener)
 	if err != nil {
 		fmt.Println(err)
 		os.Exit(1)
@@ -93,7 +117,7 @@ func main() {
 	msgchan := make(chan string)
 	go printMessages(msgchan, url, method)
 	for {
-		conn, err := ln.Accept()
+		conn, err := ln.AcceptTCP()
 		if err != nil {
 			fmt.Println(err)
 			continue
